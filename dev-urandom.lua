@@ -4,14 +4,10 @@ local crypto = require(".crypto")
 POOL_SIZE = POOL_SIZE or 8192
 Pool = Pool or EntropyPool:new(POOL_SIZE)
 
--- Max. messages limit per user per block
-MAX_MESSAGES = 12
-
--- Store total of messages from users in the current block
-Users = Users or {}
-
--- Store messages that can't be added in the pool (MAX_MESSAGES)
-Messages = Messages or {}
+MAX_BYTES_REQUEST = MAX_BYTES_REQUEST or 2048 -- Maximum bytes that can be generated in a single message
+MAX_MESSAGES = MAX_MESSAGES or 12 -- Maximum number of messages per user per Cron tick
+Users = Users or {} -- Store the total number of messages from users in the current Cron tick
+Messages = Messages or {} -- Store messages that cannot be added to the pool (MAX_MESSAGES)
 
 local function maybeCreateUser(user)
    if Users[user] == nil then
@@ -86,6 +82,7 @@ Handlers.add("Get-Random",
    Handlers.utils.hasMatchingTag("Action", "Get-Random"),
    function (msg)
       local bytes = tonumber(msg["Bytes"])
+      assert(bytes <= MAX_BYTES_REQUEST, "maximum bytes per message exceeded")
 
       local generator = RANDOM_NUMBER_GENERATOR_LIST[msg["Generator"] or "sha2_256"]
       assert(generator ~= nil, "invalid generator")

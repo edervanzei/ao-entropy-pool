@@ -1,5 +1,6 @@
 # AO Entropy Pool: /dev/urandom in AO
 AO Entropy Pool is based on [/dev/urandom](https://en.wikipedia.org/wiki//dev/random), a CSPRNG (Cryptographically secure pseudorandom number generator), in [AO](https://ao.arweave.dev).
+
 Verifiable and deterministic generator, but extremely unpredictable.
 
 ## Index
@@ -23,7 +24,8 @@ AO Entropy Pool expect to other processes interact with it, simulating /dev/uran
 When a random number is requested, slices of the pool are extracted and applied into a hash function (which can be chosen by the requester), then the hash digests are also shuffled in the pool.
 
 ## Documentation
-WIP
+Here are the technical details about the implementation and the methods used to handle malicious users, spam, and others, while keeping the generator secure.
+[Documentation](./docs/index.md)
 
 ## Contribute
 WIP
