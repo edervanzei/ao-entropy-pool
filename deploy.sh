@@ -1,0 +1,1 @@
+aos $1 --wallet wallet.json --load byte-list.lua --load utils.lua --load entropy-pool.lua --load dev-urandom.lua --cron 2-minutes

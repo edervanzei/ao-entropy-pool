@@ -1,0 +1,235 @@
+local bint = require(".bint")(256)
+
+------------------------------------------------------
+--- Utils ---
+------------------------------------------------------
+TokenUtils = {
+   add = function(a, b)
+      return tostring(bint(a) + bint(b))
+   end,
+
+   subtract = function(a, b)
+      return tostring(bint(a) - bint(b))
+   end,
+
+   divide = function (a, b)
+      return tostring(bint(a) / bint(b))
+   end,
+
+   multiply = function (a, b)
+      return tostring(bint(a) * bint(b))
+   end,
+
+   floor = function (a)
+      return tostring(math.floor(bint(a)))
+   end,
+
+   toBalanceValue = function(a)
+      return tostring(bint(a))
+   end,
+
+   toBint = function(a)
+      return bint(a)
+   end
+}
+
+------------------------------------------------------
+--- Token Info ---
+------------------------------------------------------
+Variant = "0.0.0"
+
+Name = Name or "Random Number Generator"
+Denomination = Denomination or 6
+Ticker = Ticker or "RNG"
+Logo = Logo or nil
+TotalSupply = TotalSupply or TokenUtils.toBalanceValue(10000 * 10 ^ Denomination)
+
+------------------------------------------------------
+--- Accounts ---
+------------------------------------------------------
+Balances = Balances or {
+   [ao.id] = TokenUtils.toBalanceValue(10000 * 10 ^ Denomination)
+}
+
+Staking = Staking or {}
+StakingReward = StakingReward or TokenUtils.toBalanceValue(1000)
+BonusReward = BonusReward or TokenUtils.toBalanceValue(0)
+
+function MaybeCreateAccount (account)
+   if not Balances[account] then
+      Balances[account] = TokenUtils.toBalanceValue(0)
+   end
+end
+
+function MaybeCreateStake (account)
+   if not Staking[account] then
+      Staking[account] = TokenUtils.toBalanceValue(0)
+   end
+end
+
+------------------------------------------------------
+--- Handlers ---
+------------------------------------------------------
+Handlers.add("Token-Info",
+   Handlers.utils.hasMatchingTag("Action", "Info"),
+   function (msg)
+      msg.reply({
+         Name=Name,
+         Ticker=Ticker,
+         Logo=Logo,
+         TotalSupply=TotalSupply,
+         Denomination=Denomination
+      })
+   end
+)
+
+Handlers.add("Balance",
+   Handlers.utils.hasMatchingTag("Action", "Balance"),
+   function (msg)
+      local from = msg.From
+      local recipient = msg.Tags.Recipient
+      local target = msg.Tags.Target
+      local balance = TokenUtils.toBalanceValue(0)
+
+      if recipient and Balances[recipient] then
+         balance = Balances[recipient]
+      elseif target and Balances[target] then
+         balance = Balances[target]
+      elseif Balances[from] then
+         balance = Balances[from]
+      end
+
+      msg.reply({
+         Account = recipient or from,
+         Balance = balance,
+         Ticker = Ticker,
+         Data = balance
+      })
+   end
+)
+
+Handlers.add("Transfer",
+   Handlers.utils.hasMatchingTag("Action", "Transfer"),
+   function(msg)
+      local from = msg.From
+      local recipient = msg.Tags.Recipient
+      local quantity = msg.Tags.Quantity
+
+      assert(type(recipient) == "string", "Recipient is required!")
+      assert(type(quantity) == "string", "Quantity is required!")
+      assert(bint.__lt(0, bint(quantity)), "Quantity must be greater than 0")
+
+      MaybeCreateAccount(from)
+      MaybeCreateAccount(recipient)
+
+      if bint(quantity) <= bint(Balances[from]) then
+         Balances[from] = TokenUtils.subtract(Balances[from], quantity)
+         Balances[recipient] = TokenUtils.add(Balances[recipient], quantity)
+
+         --[[
+               Only send the notifications to the Sender and Recipient
+               if the Cast tag is not set on the Transfer message
+            ]]
+         --
+         if not msg.Tags.Cast then
+            -- Debit-Notice message template, that is sent to the Sender of the transfer
+            local debitNotice = {
+               Action = "Debit-Notice",
+               Recipient = recipient,
+               Quantity = quantity,
+               Data = "You transferred " .. quantity .. " to " .. recipient
+            }
+
+            -- Credit-Notice message template, that is sent to the Recipient of the transfer
+            local creditNotice = {
+               Target = recipient,
+               Action = "Credit-Notice",
+               Sender = from,
+               Quantity = quantity,
+               Data = "You received " .. quantity .. " from " .. from
+            }
+
+            -- Add forwarded tags to the credit and debit notice messages
+            for tagName, tagValue in pairs(msg) do
+               -- Tags beginning with "X-" are forwarded
+               if string.sub(tagName, 1, 2) == "X-" then
+                  debitNotice[tagName] = tagValue
+                  creditNotice[tagName] = tagValue
+               end
+            end
+
+            -- Send Debit-Notice and Credit-Notice
+            msg.reply(debitNotice)
+            Send(creditNotice)
+         end
+      else
+         msg.reply({
+            Action = "Transfer-Error",
+            ["Message-Id"] = msg.Id,
+            Error = "Insufficient Balance!"
+         })
+      end
+   end
+)
+
+Handlers.add("Staking",
+   Handlers.utils.hasMatchingTag("Action", "Staking"),
+   function(msg)
+      local from = msg.From
+      local quantity = msg.Tags.Quantity
+
+      assert(type(quantity) == "string", "Quantity is required!")
+      assert(bint.__lt(0, bint(quantity)), "Quantity must be greater than 0")
+
+      MaybeCreateAccount(from)
+      MaybeCreateStake(from)
+
+      if bint(quantity) <= bint(Balances[from]) then
+         Balances[from] = TokenUtils.subtract(Balances[from], quantity)
+         Staking[from] = TokenUtils.add(Staking[from], quantity)
+
+         msg.reply({
+            Action = "Stake-Notice",
+            Quantity = quantity,
+            Data = "You stake " .. quantity
+         })
+      else
+         msg.reply({
+            Action = "Stake-Error",
+            ["Message-Id"] = msg.Id,
+            Error = "Insufficient Balance!"
+         })
+      end
+   end
+)
+
+Handlers.add("Mint",
+   Handlers.utils.hasMatchingTag("Action", "Cron"),
+   function ()
+      if #Staking == 0 then
+         BonusReward = TokenUtils.add(BonusReward, StakingReward)
+         Balances[ao.id] = TokenUtils.subtract(Balances[ao.id], StakingReward)
+
+         return
+      end
+
+      local totalStaked = TokenUtils.toBalanceValue(0)
+      local reward = TokenUtils.add(StakingReward, BonusReward)
+
+      for staker, amount in pairs(Staking) do
+         totalStaked = TokenUtils.add(totalStaked, amount)
+      end
+
+      for staker, amount in pairs(Staking) do
+         local value = TokenUtils.divide(amount, totalStaked)
+         value = TokenUtils.multiply(value, reward)
+
+         Balances[staker] = TokenUtils.add(Balances[staker], value)
+         Balances[staker] = TokenUtils.floor(Balances[staker])
+
+         Balances[ao.id] = TokenUtils.subtract(Balances[ao.id], value)
+      end
+
+      BonusReward = TokenUtils.toBalanceValue(0)
+   end
+)
