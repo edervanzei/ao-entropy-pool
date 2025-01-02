@@ -1,0 +1,1 @@
+aos $1 --wallet wallet.json --load byte-list.lua --load conversion.lua --load entropy-pool.lua --load dev-urandom.lua

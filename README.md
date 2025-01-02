@@ -24,8 +24,7 @@ AO Entropy Pool expect to other processes interact with it, simulating /dev/uran
 When a random number is requested, slices of the pool are extracted and applied into a hash function (which can be chosen by the requester), then the hash digests are also shuffled in the pool.
 
 ## Documentation
-Here are the technical details about the implementation and the methods used to handle malicious users, spam, and others, while keeping the generator secure.
-[Documentation](./docs/index.md)
+[Here](./docs/index.md) are the technical details about the implementation and the methods used to handle malicious users, spam, and others, while keeping the generator secure.
 
 ## Contribute
 WIP

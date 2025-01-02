@@ -55,3 +55,14 @@ function EntropyPool:random(size, generator)
 
    return result;
 end
+
+function EntropyPool:randomUInt32(generator)
+   local result = 0
+   local bytes = self:random(4, generator)
+
+   for i = 1, bytes:length() do
+      result = result + (bytes:get(i) << (8*(i-1)))
+   end
+
+   return result
+end

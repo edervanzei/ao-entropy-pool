@@ -1,13 +1,6 @@
 local bint = require(".bint")(512)
 local crypto = require(".crypto")
-
-POOL_SIZE = POOL_SIZE or 8192
-Pool = Pool or EntropyPool:new(POOL_SIZE)
-
-MAX_BYTES_REQUEST = MAX_BYTES_REQUEST or 2048 -- Maximum bytes that can be generated in a single message
-MAX_MESSAGES = MAX_MESSAGES or 12 -- Maximum number of messages per user per Cron tick
-Users = Users or {} -- Store the total number of messages from users in the current Cron tick
-Messages = Messages or {} -- Store messages that cannot be added to the pool (MAX_MESSAGES)
+local utils = require(".utils")
 
 local function maybeCreateUser(user)
    if Users[user] == nil then
@@ -31,16 +24,28 @@ RANDOM_NUMBER_GENERATOR_LIST = {
    ["keccak512"]=createGenerator(crypto.digest.keccak512)
 }
 
+OUTPUT_FORMAT = {
+   HEX="hex",
+   ARRAY="array"
+}
+
+POOL_SIZE = POOL_SIZE or 8192
+Pool = Pool or EntropyPool:new(POOL_SIZE)
+
+MAX_BYTES_REQUEST = MAX_BYTES_REQUEST or 2048 -- Maximum bytes that can be generated in a single message
+MAX_MESSAGES = MAX_MESSAGES or 12 -- Maximum number of messages per user per Cron tick
+Users = Users or {} -- Store the total number of messages from users in the current Cron tick
+Messages = Messages or {} -- Store messages that cannot be added to the pool (MAX_MESSAGES)
+
 Handlers.add("Cron",
    Handlers.utils.hasMatchingTag("Action", "Cron"),
    function ()
       Users = {}
 
       while #Messages > 0 do
-         local bytes = Pool:random(1, RANDOM_NUMBER_GENERATOR_LIST["sha2_256"])
-         local random = bytes:get(1)
-
+         local random = Pool:randomUInt32(RANDOM_NUMBER_GENERATOR_LIST["sha2_256"])
          local msg = table.remove(Messages, random % #Messages + 1)
+
          Pool:add(msg.Id)
          Pool:add(msg.Ts)
          Pool:add(msg.Anchor)
@@ -87,23 +92,34 @@ Handlers.add("Get-Random",
       local generator = RANDOM_NUMBER_GENERATOR_LIST[msg["Generator"] or "sha2_256"]
       assert(generator ~= nil, "invalid generator")
 
+      local format = msg["Output-Format"] or "hex"
+      assert(utils.includes(format, utils.values(OUTPUT_FORMAT)), "invalid output format")
+
+      local data = nil
       local random = Pool:random(bytes, generator)
-      msg.reply({
-         Data=random:toHex()
-      })
+
+      if format == OUTPUT_FORMAT.HEX then
+         data = random:toHex()
+      elseif format == OUTPUT_FORMAT.ARRAY then
+         data = "[" .. table.concat(random.data, ",") .. "]"
+      end
+
+      msg.reply({ Data=data })
    end
 )
 
 Handlers.add("Get-Generators",
    Handlers.utils.hasMatchingTag("Action", "Get-Generators"),
    function (msg)
-      local list = {}
-      for name, generator in pairs(RANDOM_NUMBER_GENERATOR_LIST) do
-         table.insert(list, name)
-      end
+      local data = table.concat(utils.keys(RANDOM_NUMBER_GENERATOR_LIST), ",")
+      msg.reply({ Data=data })
+   end
+)
 
-      msg.reply({
-         Data=table.concat(list, ",")
-      })
+Handlers.add("Get-Output-Formats",
+   Handlers.utils.hasMatchingTag("Action", "Get-Output-Formats"),
+   function (msg)
+      local data = table.concat(utils.values(OUTPUT_FORMAT), ",")
+      msg.reply({ Data=data })
    end
 )
